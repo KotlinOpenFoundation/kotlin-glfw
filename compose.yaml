@@ -1,0 +1,11 @@
+services:
+
+  compile:
+    build: .
+    volumes:
+      - .:/workspace
+      - gradle:/root/.gradle
+    working_dir: /workspace
+
+volumes:
+  gradle: {}

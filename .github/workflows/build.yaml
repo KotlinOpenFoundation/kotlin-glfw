@@ -1,0 +1,91 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+#  release:
+#    types: [ created ]
+
+env:
+  JDK_VERSION: 22
+  MESA_VERSION: 25.2.0
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-13, macos-latest ] # TODO: add linux-arm
+    runs-on: ${{ matrix.os }}
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Install Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config libwayland-dev libxkbcommon-dev xorg-dev xvfb git libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev libwayland-dev libxkbcommon-dev
+
+      - name: Install Dependencies (Linux x64)
+        if: runner.os == 'Linux' && runner.arch == 'x64'
+        run: |
+          sudo apt-get install -y gcc-multilib
+
+      - name: Checkout sources
+        uses: actions/checkout@v5
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: '${{ env.JDK_VERSION }}'
+          distribution: 'temurin'
+          server-id: GitHubPackages
+          settings-path: ${{ github.workspace }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable (Unix)
+        if: runner.os != 'Windows'
+        run: chmod +x ./gradlew
+
+      - name: Start virtual framebuffer
+        if: runner.os == 'Linux'
+        run: |
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1920x1080x24 > /dev/null 2>&1 &
+
+      - name: Build with Gradle (Unix)
+        if: runner.os != 'Windows'
+        run: ./gradlew build
+        env:
+          DISPLAY: :99
+
+      - name: Build with Gradle (Windows)
+        if: runner.os == 'Windows'
+        run: .\gradlew.bat build
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            **/build/test-results/**/*.xml
+            **/build/reports/tests/**
+
+#      - name: Generate and submit dependency graph
+#        uses: gradle/actions/dependency-submission@v4
+
+#      - name: Publish to GitHub Packages
+#        run: ./gradlew publish
+#        env:
+#          USERNAME: ${{ github.actor }}
+#          TOKEN: ${{ secrets.GITHUB_TOKEN }}
