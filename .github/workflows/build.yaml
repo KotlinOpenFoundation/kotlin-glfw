@@ -1,0 +1,161 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+#  release:
+#    types: [ created ]
+
+env:
+  JDK_VERSION: 22
+  MESA_VERSION: 24.0.1
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+#        os: [ ubuntu-latest, windows-latest, macos-13, macos-latest ] # TODO: add linux-arm
+        os: [ windows-latest ]
+    runs-on: ${{ matrix.os }}
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v5
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: '${{ env.JDK_VERSION }}'
+          distribution: 'temurin'
+          cache: 'gradle'
+          server-id: GitHubPackages
+          settings-path: ${{ github.workspace }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config libwayland-dev libxkbcommon-dev xorg-dev xvfb git libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev libwayland-dev libxkbcommon-dev
+
+      - name: Install Dependencies (Linux x64)
+        if: runner.os == 'Linux' && runner.arch == 'x64'
+        run: sudo apt-get install -y gcc-multilib
+
+      - name: Restore cached Mesa (Windows)
+        id: cache-mesa-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: mesa
+          key: mesa-${{ env.MESA_VERSION }}-release-mingw-${{ runner.os }}-${{ runner.arch }}
+
+      - uses: milliewalky/setup-7-zip@v2
+        if: runner.os == 'Windows' && steps.cache-mesa-restore.outputs.cache-hit != 'true'
+
+      - name: Install Mesa (Windows)
+        if: runner.os == 'Windows' && steps.cache-mesa-restore.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          # Download Mesa
+          Invoke-WebRequest -Uri "https://github.com/pal1000/mesa-dist-win/releases/download/$Env:MESA_VERSION/mesa3d-$Env:MESA_VERSION-release-mingw.7z" -OutFile mesa.7z
+          # Extract Mesa
+          7z x 'mesa.7z' -y -o"$PWD\mesa"
+
+      - name: Always Cache Mesa (Windows)
+        id: cache-mesa-save
+        if: always() && steps.cache-mesa-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          key: ${{ steps.cache-mesa-restore.outputs.cache-primary-key }}
+          path: mesa
+
+      - name: Set up Mesa (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |          
+          $mesaDir = Join-Path $PWD "mesa\x64"
+          $opengl = Join-Path $mesaDir "opengl32.dll"
+          if (-not (Test-Path $opengl)) { throw "Mesa opengl32.dll not found at $mesaDir" }
+          
+          # Export Mesa dir for later steps
+          "MESA_OPENGL_DIR=$mesaDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $mesaDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          
+          # Copy Mesa DLLs to test binary dir
+          $libBinDir = Join-Path $PWD "glfw-interop/build/lib/glfw/mingw/lib-mingw-w64"
+          New-Item -ItemType Directory -Force -Path $libBinDir
+          Copy-Item -Path (Join-Path $mesaDir "*.dll") -Destination $gradleDir -Force
+
+      - name: Verify OpenGL Library (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Write-Host "PATH head:" ($env:PATH -split ';' | Select-Object -First 5)
+          Write-Host "Searching for opengl32.dll and libgallium_wgl.dll on PATH:"
+          where.exe opengl32.dll
+          where.exe libgallium_wgl.dll 
+
+      - name: Start virtual framebuffer (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1920x1080x24 > /dev/null 2>&1 &
+
+      - name: Build with Gradle (Unix)
+        if: runner.os != 'Windows'
+        run: ./gradlew build
+        env:
+          DISPLAY: :99
+
+      - name: Build with Gradle (Windows)
+        if: runner.os == 'Windows'
+        run: ./gradlew build
+        env:
+          # Force software WGL via Gallium (llvmpipe)
+          GALLIUM_DRIVER: llvmpipe
+          MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
+          LIBGL_ALWAYS_SOFTWARE: 1
+          # Conservative caps for CI
+          MESA_GL_VERSION_OVERRIDE: "4.5"
+          MESA_GLSL_VERSION_OVERRIDE: "450"
+          # Diagnostics
+          MESA_DEBUG: "1"
+          GALLIUM_PRINT_OPTIONS: "1"
+
+      - name: Test Report
+        uses: dorny/test-reporter@v2
+        if: ${{ !cancelled() }}
+        with:
+          name: Tests
+          reporter: java-junit
+          path: '**/build/test-results/**/TEST-*.xml'
+          fail-on-empty: false
+
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            **/build/test-results/**/*.xml
+            **/build/reports/tests/**
+
+#      - name: Generate and submit dependency graph
+#        uses: gradle/actions/dependency-submission@v4
+
+#      - name: Publish to GitHub Packages
+#        run: ./gradlew publish
+#        env:
+#          USERNAME: ${{ github.actor }}
+#          TOKEN: ${{ secrets.GITHUB_TOKEN }}

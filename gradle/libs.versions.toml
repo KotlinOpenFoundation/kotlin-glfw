@@ -1,0 +1,23 @@
+# Version catalog is a central place for you to declare and version dependencies
+# https://docs.gradle.org/current/userguide/platforms.html#sub:version-catalog
+# https://docs.gradle.org/current/userguide/platforms.html#sub::toml-dependencies-format
+
+[versions]
+jdk = "22"
+kotlin = "2.2.20"
+kotlin-logging = "7.0.13"
+git-version = "4.0.0"
+dokka = "2.0.0"
+
+[libraries]
+kotlin-logging = { module = "io.github.oshai:kotlin-logging", version.ref = "kotlin-logging" }
+dokka-gradle-plugin = { module = "org.jetbrains.dokka:dokka-gradle-plugin", version.ref = "dokka" }
+git-version-gradle-plugin = { module = "com.palantir.git-version:com.palantir.git-version.gradle.plugin", version.ref = "git-version" }
+kotlin-multiplatform-gradle-plugin = { module = "org.jetbrains.kotlin.multiplatform:org.jetbrains.kotlin.multiplatform.gradle.plugin", version.ref = "kotlin" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+
+[plugins]
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-powerassert = { id = "org.jetbrains.kotlin.plugin.power-assert", version.ref = "kotlin" }
+git-version = { id = "com.palantir.git-version", version.ref = "git-version" }
+dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }

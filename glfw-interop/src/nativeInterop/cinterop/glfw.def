@@ -1,0 +1,21 @@
+package = platform.glfw
+
+headers = GLFW/glfw3.h GLFW/glfw3native.h
+headerFilter = GLFW/*
+staticLibraries = libglfw3.a
+
+libraryPaths.mingw_x64 = build/lib/glfw/mingw/lib-mingw-w64
+compilerOpts.mingw_x64 = -Ibuild/lib/glfw/mingw/include
+linkerOpts.mingw_x64 = -lgdi32 -lopengl32
+
+libraryPaths.macos_x64 = build/lib/glfw/macos/lib-x86_64
+compilerOpts.macos_x64 = -Ibuild/lib/glfw/macos/include
+linkerOpts.macos_x64 = -framework Cocoa -framework OpenGL -framework IOKit
+
+libraryPaths.macos_arm64 = build/lib/glfw/macos/lib-arm64
+compilerOpts.macos_arm64 = -Ibuild/lib/glfw/macos/include
+linkerOpts.macos_arm64 = -framework Cocoa -framework OpenGL -framework IOKit
+
+libraryPaths.linux = build/lib/glfw/src/lib
+compilerOpts.linux = -I/usr/include -Ibuild/lib/glfw/src/include -Ibuild/lib/glfw/src/lib
+linkerOpts.linux = -lpthread
